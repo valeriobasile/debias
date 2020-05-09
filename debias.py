@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+
 import os
 import numpy as np
 import codecs
@@ -19,6 +20,7 @@ from gensim.models.ldamodel import LdaModel
 from gensim.matutils import sparse2full
 from pprint import pprint
 from numpy.random import seed
+import sys
 
 SEQ_LEN = 100
 BATCH_SIZE = eval(sys.argv[1])
@@ -90,39 +92,40 @@ train_x, train_y, train_ids, train_sentences = load_data(fulldata_path, TRAIN_SE
 dev_x, dev_y, dev_ids, dev_sentences = load_data(fulldata_path, TEST_SET, 'en', 'dev')
 test_x, test_y, test_ids, test_sentences = load_data(fulldata_path, TEST_SET, 'en', 'test')
 
-id2word = Dictionary(train_sentences)
-corpus_train = [id2word.doc2bow(text) for text in train_sentences]
-lda_model = LdaModel(corpus=corpus_train,
-                                    id2word=id2word,
-                                    num_topics=N_TOPICS,
-                                    random_state=100,
-                                    passes=50,
-                                    alpha='auto')
+if not os.path.isfile(topics_train_path):
+    id2word = Dictionary(train_sentences)
+    corpus_train = [id2word.doc2bow(text) for text in train_sentences]
+    lda_model = LdaModel(corpus=corpus_train,
+                                        id2word=id2word,
+                                        num_topics=N_TOPICS,
+                                        random_state=100,
+                                        passes=50,
+                                        alpha='auto')
 
-topics_train = lda_model.get_document_topics(corpus_train)
-corpus_dev = [id2word.doc2bow(text) for text in dev_sentences]
-topics_dev = lda_model.get_document_topics(corpus_dev)
-corpus_test = [id2word.doc2bow(text) for text in test_sentences]
-topics_test = lda_model.get_document_topics(corpus_test)
+    topics_train = lda_model.get_document_topics(corpus_train)
+    corpus_dev = [id2word.doc2bow(text) for text in dev_sentences]
+    topics_dev = lda_model.get_document_topics(corpus_dev)
+    corpus_test = [id2word.doc2bow(text) for text in test_sentences]
+    topics_test = lda_model.get_document_topics(corpus_test)
 
-with open(topics_train_path, 'w') as fo:
-    writer = csv.writer(fo)
-    writer.writerow(['id']+['topic_{0}'.format(i) for i in range(N_TOPICS)])
-    for i, vector in enumerate(topics_train):
-        row = [train_ids[i]] + [str(x) for x in sparse2full(vector, N_TOPICS)]
-        writer.writerow(row)
-with open(topics_dev_path, 'w') as fo:
-    writer = csv.writer(fo)
-    writer.writerow(['id']+['topic_{0}'.format(i) for i in range(N_TOPICS)])
-    for i, vector in enumerate(topics_dev):
-        row = [dev_ids[i]] + [str(x) for x in sparse2full(vector, N_TOPICS)]
-        writer.writerow(row)
-with open(topics_test_path, 'w') as fo:
-    writer = csv.writer(fo)
-    writer.writerow(['id']+['topic_{0}'.format(i) for i in range(N_TOPICS)])
-    for i, vector in enumerate(topics_test):
-        row = [test_ids[i]] + [str(x) for x in sparse2full(vector, N_TOPICS)]
-        writer.writerow(row)
+    with open(topics_train_path, 'w') as fo:
+        writer = csv.writer(fo)
+        writer.writerow(['id']+['topic_{0}'.format(i) for i in range(N_TOPICS)])
+        for i, vector in enumerate(topics_train):
+            row = [train_ids[i]] + [str(x) for x in sparse2full(vector, N_TOPICS)]
+            writer.writerow(row)
+    with open(topics_dev_path, 'w') as fo:
+        writer = csv.writer(fo)
+        writer.writerow(['id']+['topic_{0}'.format(i) for i in range(N_TOPICS)])
+        for i, vector in enumerate(topics_dev):
+            row = [dev_ids[i]] + [str(x) for x in sparse2full(vector, N_TOPICS)]
+            writer.writerow(row)
+    with open(topics_test_path, 'w') as fo:
+        writer = csv.writer(fo)
+        writer.writerow(['id']+['topic_{0}'.format(i) for i in range(N_TOPICS)])
+        for i, vector in enumerate(topics_test):
+            row = [test_ids[i]] + [str(x) for x in sparse2full(vector, N_TOPICS)]
+            writer.writerow(row)
 
 def read_topics(path):
     t = []
