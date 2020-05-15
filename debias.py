@@ -89,7 +89,7 @@ def load_data(path, target, language, split):
     return [indices, np.zeros_like(indices)], np.array(sentiments), instance_ids, sentences
 
 train_x, train_y, train_ids, train_sentences = load_data(fulldata_path, TRAIN_SET, 'en', 'train')
-dev_x, dev_y, dev_ids, dev_sentences = load_data(fulldata_path, TEST_SET, 'en', 'dev')
+dev_x, dev_y, dev_ids, dev_sentences = load_data(fulldata_path, TRAIN_SET, 'en', 'dev')
 test_x, test_y, test_ids, test_sentences = load_data(fulldata_path, TEST_SET, 'en', 'test')
 
 if not os.path.isfile(topics_train_path):
@@ -191,47 +191,8 @@ def evaluate(predicts, gold):
         eval_values.extend([accuracy])
         return eval_values
 
-seed(SEED)
-
-def recall_m(y_true, y_pred):
-    true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
-    possible_positives = K.sum(K.round(K.clip(y_true, 0, 1)))
-    recall = true_positives / (possible_positives + K.epsilon())
-    return recall
-
-def precision_m(y_true, y_pred):
-    true_positives = K.sum(K.round(K.clip(y_true * y_pred, 0, 1)))
-    predicted_positives = K.sum(K.round(K.clip(y_pred, 0, 1)))
-    precision = true_positives / (predicted_positives + K.epsilon())
-    return precision
-
-def f1_m(y_true, y_pred):
-    precision = precision_m(y_true, y_pred)
-    recall = recall_m(y_true, y_pred)
-    return 2*((precision*recall)/(precision+recall+K.epsilon()))
-
-def debias_loss(y_true, y_pred, from_logits=False, axis=-1):
-    idx1 = tf.Variable([[[i,0]] for i in range(BATCH_SIZE)])
-    idx2 = tf.Variable([[[i,0], [i,1]] for i in range(BATCH_SIZE)])
-    label_true = tf.gather_nd(y_true, idx1)
-    label_pred = tf.gather_nd(y_pred, idx2)
-
-    idx_t1 = tf.Variable([[[i,j] for j in range(1,N_TOPICS+1)] for i in range(BATCH_SIZE)])
-    idx_t2 = tf.Variable([[[i,j] for j in range(2,N_TOPICS+2)] for i in range(BATCH_SIZE)])
-    topic_true = tf.gather_nd(y_true, idx_t1)
-    topic_pred = tf.gather_nd(y_pred, idx_t2)
-
-    #return K.sparse_categorical_crossentropy(label_true, label_pred, from_logits=from_logits, axis=axis)
-    return (ALPHA*K.sparse_categorical_crossentropy(label_true, label_pred, from_logits=from_logits, axis=axis)) + ((1-ALPHA) * keras.metrics.cosine_proximity(topic_true, topic_pred))
-
-
 def cos_distance(y_true, y_pred):
-    def l2_normalize(x, axis):
-        norm = K.sqrt(K.sum(K.square(x), axis=axis, keepdims=True))
-        return K.maximum(x, K.epsilon()) / K.maximum(norm, K.epsilon())
-    y_true = l2_normalize(y_true, axis=-1)
-    y_pred = l2_normalize(y_pred, axis=-1)
-    return -K.mean(y_true * y_pred, axis=-1)
+    return 1-cos_similarity(y_true, y_pred)
 
 def cos_similarity(y_true, y_pred):
     def l2_normalize(x, axis):
@@ -239,24 +200,9 @@ def cos_similarity(y_true, y_pred):
         return K.maximum(x, K.epsilon()) / K.maximum(norm, K.epsilon())
     y_true = l2_normalize(y_true, axis=-1)
     y_pred = l2_normalize(y_pred, axis=-1)
-    return K.mean(y_true * y_pred, axis=-1)
+    return (K.mean(y_true * y_pred, axis=-1)+1.0)*0.5
 
-def debias_acc(y_true, y_pred):
-    idx1 = tf.Variable([[[i,0]] for i in range(BATCH_SIZE)])
-    idx2 = tf.Variable([[[i,0], [i,1]] for i in range(BATCH_SIZE)])
-
-    label_true = tf.gather_nd(y_true, idx1)
-    label_pred = tf.argmax(tf.gather_nd(y_pred, idx2), axis=1)
-
-    # idx_t1 = tf.Variable([[[i,j] for j in range(1,26)] for i in range(BATCH_SIZE)])
-    # idx_t2 = tf.Variable([[[i,j] for j in range(2,27)] for i in range(BATCH_SIZE)])
-    # topic_true = tf.gather_nd(y_true, idx_t1)
-    # topic_pred = tf.gather_nd(y_true, idx_t2)
-
-    #return K.sparse_categorical_crossentropy(label_true, label_pred, from_logits=from_logits, axis=axis) + keras.metrics.cosine_proximity(topic_true, topic_pred)
-    #return keras.metrics.accuracy(label_true, label_pred)
-    return f1_m(tf.cast(label_true, tf.float32), tf.cast(label_pred, tf.float32))
-    #return f1_score(label_true, label_pred , average="macro")
+seed(SEED)
 
 model = load_trained_model_from_checkpoint(
     config_path,
@@ -296,7 +242,7 @@ model.compile(
 train_yt = np.hstack((np.asmatrix(train_y).transpose(), train_t))
 dev_yt = np.hstack((np.asmatrix(dev_y).transpose(), dev_t))
 
-callbacks = [EarlyStopping(monitor='val_loss', patience=10)]
+#callbacks = [EarlyStopping(monitor='val_loss', patience=10)]
 
 history = model.fit(
     train_x,
@@ -304,28 +250,9 @@ history = model.fit(
     epochs=EPOCHS,
     batch_size=BATCH_SIZE,
     verbose=True,
-    callbacks=callbacks,
+    #callbacks=callbacks,
     validation_data=(dev_x, {"label": dev_y, "topic": dev_t}),
     )
-
-# import matplotlib.pyplot as plt
-#
-# # # summarize history for loss
-# plt.plot(history.history['label_loss'])
-# plt.plot(history.history['val_label_loss'])
-# plt.title('label_loss')
-# plt.ylabel('label_loss')
-# plt.xlabel('epoch')
-# plt.legend(['train', 'test'], loc='upper left')
-# plt.show()
-# # # summarize history for accuracy
-# plt.plot(history.history['label_accuracy'])
-# plt.plot(history.history['val_label_accuracy'])
-# plt.title('label_accuracy')
-# plt.ylabel('label_accuracy')
-# plt.xlabel('epoch')
-# plt.legend(['train', 'test'], loc='upper left')
-# plt.show()
 
 experiment_key = "{0}_{1}_{2}_{3}_{4}_{5}_{6}_{7}".format(
     "-".join(TRAIN_SET),
