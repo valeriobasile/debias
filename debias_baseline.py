@@ -30,10 +30,9 @@ SEQ_LEN = 100
 BATCH_SIZE = 8
 EPOCHS = 100
 LR = 1e-6
-ALPHA = eval(sys.argv[1])
-SEED = eval(sys.argv[2])
-TRAIN_SET = sys.argv[3]
-LANGUAGE = sys.argv[4]
+SEED = eval(sys.argv[1])
+TRAIN_SET = sys.argv[2]
+LANGUAGE = sys.argv[3]
 DATASETS ["abuseval","ami_evalita","ami_ibereval","davidson","founta","hateval","hateval_mig","hateval_mis","irony","offenseval","waseem"]
 seed(SEED)
 
@@ -201,7 +200,7 @@ pred[pred>=.5]=1
 pred[pred<.5]=0
 scores = evaluate(pred, dev_y)
 
-output = ",".join(['baseline', LANGUAGE, TRAIN_SET, TRAIN_SET, 'dev', str(LR), str(N_TOPICS), str(ALPHA), str(SEED)]+['{0:.4f}'.format(s) for s in scores])
+output = ",".join(['baseline', LANGUAGE, TRAIN_SET, TRAIN_SET, 'dev', str(LR), "-", "-", str(SEED)]+['{0:.4f}'.format(s) for s in scores])
 
 with open(output_path, 'a') as fo:
     fo.write("{0}\n".format(output))
@@ -215,6 +214,6 @@ for test_dataset in DATASETS:
     pred[pred>=.5]=1
     pred[pred<.5]=0
     scores = evaluate(pred, test_y)
-    output = ",".join(['baseline', LANGUAGE, TRAIN_SET, test_dataset, 'test', str(LR), str(N_TOPICS), str(ALPHA), str(SEED)]+['{0:.4f}'.format(s) for s in scores])
+    output = ",".join(['baseline', LANGUAGE, TRAIN_SET, test_dataset, 'test', str(LR), "-", "-", str(SEED)]+['{0:.4f}'.format(s) for s in scores])
     with open(output_path, 'a') as fo:
         fo.write("{0}\n".format(output))
