@@ -14,16 +14,26 @@ import sys
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
+from keras.layers import Input, Dense
+from keras.optimizers import Adam
+from keras.callbacks import EarlyStopping, ModelCheckpoint
+from keras.metrics import AUC
+from keras.models import load_model
+import keras
+import tensorflow as tf
 
-N_TOPICS = 100
-#ALPHA = eval(sys.argv[5])
-#SEED = eval(sys.argv[6])
+N_TOPICS = 10
+ALPHA = 0.5
 dataset = "hateval"
 language = 'en'
+BATCH_SIZE = 32
+EPOCHS = 100
+LR = 1e-6
+SEED = 1
 
-data_path = 'data/multilingual_binary/{0}/{1}'.format(language, dataset)
+data_path = 'data/{0}/{1}'.format(language, dataset)
 train_path = os.path.join(data_path, 'train.csv')
-train_topics_path = os.path.join(data_path, 'train_topics_{0}.csv'.format(N_TOPICS))
+train_topics_path = os.path.join(data_path, 'train_topics.csv')
 train_sentenc_path = os.path.join(data_path, 'train_sentenc.csv')
 dev_path = os.path.join(data_path, 'dev.csv')
 dev_sentenc_path = os.path.join(data_path, 'dev_sentenc.csv')
@@ -55,79 +65,76 @@ def read_topics(path):
     with open(path, 'r') as f:
         reader = csv.DictReader(f)
         for row in reader:
-            t.append(np.array([row['topic_{0}'.format(i)] for i in range(N_TOPICS)]))
+            t.append(np.array([row['topic_{0}'.format(i)] for i in range(10)]))
     return np.array(t)
 
 
-#dev_t = read_topics(topics_dev_path)
-
-def evaluate(predicts, gold):
-        tp = 0
-        fp = 0
-        tn = 0
-        fn = 0
-        hits = 0
-        for c in range(len(np.unique(gold))):
-            for g, p in zip(gold, predicts):
-                if g == p:
-                    hits += 1
-                    if p==c:
-                        tp+=1
-                    else:
-                        tn+=1
-                else:
-                    if p==c:
-                        fp+=1
-                    else:
-                        fn+=1
-        if tp+fp == 0:
-            microp = 0.0
-        else:
-            microp = tp/(tp+fp)
-        if tp+fn == 0:
-            micror = 0.0
-        else:
-            micror = tp/(tp+fn)
-        if microp+micror == 0.0:
-            microf1 = 0.0
-        else:
-            microf1 = (2*microp*micror)/(microp+micror)
-        accuracy = (hits/2)/gold.shape[0]
-        report = classification_report(gold, predicts, output_dict=True)
-        df = pd.DataFrame(report)
-        eval_values = []
-        for l in [str(x) for x in range(len(np.unique(gold)))]:
-            if not l in df:
-                eval_values.extend([0,0,0])
-            else:
-                eval_values.extend([
-                    df[l]['precision'],
-                    df[l]['recall'],
-                    df[l]['f1-score']
-                ])
-        eval_values.extend([
-                    df['macro avg']['precision'],
-                    df['macro avg']['recall'],
-                    df['macro avg']['f1-score']
-        ])
-        #eval_values.extend([microp, micror, microf1])
-        eval_values.extend([accuracy])
-        return eval_values
-
 # train
-model = make_pipeline(StandardScaler(), SVC(kernel='linear', verbose=True, class_weight='balanced'))
-model.fit(train_x, train_y)
 
 # predict
 test_path = os.path.join(data_path, 'test.csv')
-test_topics_path = os.path.join(data_path, 'test_topics_{0}.csv'.format(N_TOPICS))
+test_topics_path = os.path.join(data_path, 'test_topics.csv')
 test_sentenc_path = os.path.join(data_path, 'test_sentenc.csv')
 test_x, test_y, test_ids, test_sentences = load_data(test_path, test_sentenc_path)
 train_t = read_topics(train_topics_path)
+print(train_x.shape, train_y.shape, train_t.shape)
+print(train_x.shape, train_y.shape, train_t.shape)
 
-pred = model.predict(dev_x)
-print (classification_report(dev_y, pred))
-print (confusion_matrix(dev_y, pred))
-pred = model.predict(test_x)
-print (classification_report(test_y, pred))
-print (confusion_matrix(test_y, pred))
+def cos_distance(y_true, y_pred):
+    return 1-cos_similarity(y_true, y_pred)
+
+def cos_similarity(y_true, y_pred):
+    return -(tf.keras.losses.cosine_similarity(y_true, y_pred, axis=1)*.5-1.0)
+
+model = keras
+
+input = Input(shape=(512,))
+dropout = keras.layers.Dropout(0.5)(input)
+outputs_t = keras.layers.Dense(N_TOPICS, name="topic", activation="sigmoid")(dropout)
+outputs = keras.layers.Dense(1, name="label", activation="sigmoid")(dropout)
+
+model = keras.models.Model(input, [outputs, outputs_t])
+
+losses = {
+	"label": "binary_crossentropy",
+	"topic": cos_similarity
+    }
+metrics = {
+	"label": "label": AUC(name="auc"),
+	"topic": cos_distance
+    }
+lossWeights = {"label": ALPHA, "topic": 1-ALPHA}
+
+model.compile(
+    Adam(lr=LR),
+    loss=losses,
+    metrics=metrics,
+    loss_weights=lossWeights
+)
+
+try:
+    os.remove("best_model.h5")
+except:
+    print ("file not found")
+
+es = EarlyStopping(monitor='val_label_loss', mode='min', verbose=1, patience=3)
+#mc = ModelCheckpoint('best_model.h5', monitor='val_label_auc', mode='max', verbose=1, save_best_only=True)
+mc = ModelCheckpoint("best_model.h5", monitor='val_loss', mode='min', verbose=1, save_best_only=True)
+
+history = model.fit(
+    train_x,
+    {"label": train_y, "topic": train_t},
+    epochs=EPOCHS,
+    batch_size=BATCH_SIZE,
+    verbose=True,
+    shuffle=True,
+    callbacks=[es, mc],
+    validation_data=(dev_x, {"label": dev_y, "topic": dev_t})
+    )
+
+# pred = model.predict(dev_x)
+# print (classification_report(dev_y, pred))
+# print (confusion_matrix(dev_y, pred))
+# pred = model.predict(test_x)
+# print (classification_report(test_y, pred))
+# print (confusion_matrix(test_y, pred))
