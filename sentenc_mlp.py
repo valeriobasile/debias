@@ -23,12 +23,12 @@ import keras
 import tensorflow as tf
 
 N_TOPICS = 10
-ALPHA = 0.5
+ALPHA = 0.1
 dataset = "hateval"
 language = 'en'
-BATCH_SIZE = 32
+BATCH_SIZE = 64
 EPOCHS = 100
-LR = 1e-6
+LR = 1e-5
 SEED = 1
 
 data_path = 'data/multilingual_binary/{0}/{1}'.format(language, dataset)
@@ -66,9 +66,8 @@ def read_topics(path):
     with open(path, 'r') as f:
         reader = csv.DictReader(f)
         for row in reader:
-            t.append(np.array([row['topic_{0}'.format(i)] for i in range(10)]))
+            t.append(np.array([eval(row['topic_{0}'.format(i)]) for i in range(N_TOPICS)]))
     return np.array(t)
-
 
 train_t = read_topics(train_topics_path)
 dev_t = read_topics(dev_topics_path)
@@ -77,12 +76,13 @@ def cos_distance(y_true, y_pred):
     return 1-cos_similarity(y_true, y_pred)
 
 def cos_similarity(y_true, y_pred):
-    return -(tf.keras.losses.cosine_similarity(y_true, y_pred, axis=1)*.5-1.0)
+    return 1-(tf.keras.losses.mse(y_true, y_pred))
 
 model = keras
 
 input = Input(shape=(512,))
-dropout = keras.layers.Dropout(0.5)(input)
+hidden = keras.layers.Dense(100)(input)
+dropout = keras.layers.Dropout(0.25)(hidden)
 outputs_t = keras.layers.Dense(N_TOPICS, name="topic", activation="sigmoid")(dropout)
 outputs = keras.layers.Dense(1, name="label", activation="sigmoid")(dropout)
 
@@ -93,7 +93,7 @@ losses = {
 	"topic": cos_similarity
     }
 metrics = {
-	"label": "label": AUC(name="auc"),
+	"label": AUC(name="auc"),
 	"topic": cos_distance
     }
 lossWeights = {"label": ALPHA, "topic": 1-ALPHA}
@@ -126,13 +126,14 @@ history = model.fit(
     )
 
 obj = {'cos_distance': cos_distance,
-       'cos_similarity']: cos_similarity}
+       'cos_similarity': cos_similarity}
 model = load_model('best_model.h5', custom_objects=obj)
 
-for test_dataset in ['hateval_mig', 'hateval_mis', 'hateval', 'abuseval', 'offenseval', 'ami_ibereval', 'ami_evalita', 'founta', 'waseem']:
-    test_data_path = os.path.join(base_path, 'data/multilingual_binary/{0}/{1}/'.format(LANGUAGE, test_dataset))
+for test_dataset in ['hateval_mig', 'hateval_mis', 'hateval', 'abuseval', 'ami_ibereval', 'ami_evalita', 'founta', 'waseem']:
+    test_data_path = 'data/multilingual_binary/{0}/{1}'.format(language, test_dataset)
     test_path = os.path.join(test_data_path, 'test.csv')
-    test_x, test_y, test_ids, test_sentences = load_data(test_path)
+    test_sentenc_path = os.path.join(test_data_path, 'test_sentenc.csv')
+    test_x, test_y, test_ids, test_sentences = load_data(test_path, test_sentenc_path)
 
     predicts = model.predict(test_x, verbose=False)
     pred = predicts[0]
@@ -143,7 +144,7 @@ for test_dataset in ['hateval_mig', 'hateval_mis', 'hateval', 'abuseval', 'offen
 
     with open("results.csv", "a") as fo:
         writer = csv.writer(fo)
-        writer.writerow((LANGUAGE, TRAIN, test_dataset, SEED,
+        writer.writerow((language, dataset, test_dataset, SEED,
                         df['0']['precision'],
                         df['0']['recall'],
                         df['0']['f1-score'],
@@ -154,7 +155,7 @@ for test_dataset in ['hateval_mig', 'hateval_mis', 'hateval', 'abuseval', 'offen
                         df['macro avg']['recall'],
                         df['macro avg']['f1-score']))
 
-    prediction_filename = "{0}_{1}_{2}_{3}.csv".format(LANGUAGE, TRAIN, test_dataset, SEED)
-    with open(os.path.join(prediction_path, prediction_filename), "w") as fo:
-        for i, test_id in enumerate(test_ids):
-            fo.write("{0},{1}\n".format(test_id, pred[i][0]))
+    #prediction_filename = "{0}_{1}_{2}_{3}.csv".format(language, TRAIN, test_dataset, SEED)
+    #with open(os.path.join(prediction_path, prediction_filename), "w") as fo:
+    #    for i, test_id in enumerate(test_ids):
+    #        fo.write("{0},{1}\n".format(test_id, pred[i][0]))
