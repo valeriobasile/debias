@@ -31,11 +31,12 @@ EPOCHS = 100
 LR = 1e-6
 SEED = 1
 
-data_path = 'data/{0}/{1}'.format(language, dataset)
+data_path = 'data/multilingual_binary/{0}/{1}'.format(language, dataset)
 train_path = os.path.join(data_path, 'train.csv')
 train_topics_path = os.path.join(data_path, 'train_topics.csv')
 train_sentenc_path = os.path.join(data_path, 'train_sentenc.csv')
 dev_path = os.path.join(data_path, 'dev.csv')
+dev_topics_path = os.path.join(data_path, 'dev_topics.csv')
 dev_sentenc_path = os.path.join(data_path, 'dev_sentenc.csv')
 
 def load_data(path, sentenc_path):
@@ -69,16 +70,8 @@ def read_topics(path):
     return np.array(t)
 
 
-# train
-
-# predict
-test_path = os.path.join(data_path, 'test.csv')
-test_topics_path = os.path.join(data_path, 'test_topics.csv')
-test_sentenc_path = os.path.join(data_path, 'test_sentenc.csv')
-test_x, test_y, test_ids, test_sentences = load_data(test_path, test_sentenc_path)
 train_t = read_topics(train_topics_path)
-print(train_x.shape, train_y.shape, train_t.shape)
-print(train_x.shape, train_y.shape, train_t.shape)
+dev_t = read_topics(dev_topics_path)
 
 def cos_distance(y_true, y_pred):
     return 1-cos_similarity(y_true, y_pred)
@@ -132,9 +125,36 @@ history = model.fit(
     validation_data=(dev_x, {"label": dev_y, "topic": dev_t})
     )
 
-# pred = model.predict(dev_x)
-# print (classification_report(dev_y, pred))
-# print (confusion_matrix(dev_y, pred))
-# pred = model.predict(test_x)
-# print (classification_report(test_y, pred))
-# print (confusion_matrix(test_y, pred))
+obj = {'cos_distance': cos_distance,
+       'cos_similarity']: cos_similarity}
+model = load_model('best_model.h5', custom_objects=obj)
+
+for test_dataset in ['hateval_mig', 'hateval_mis', 'hateval', 'abuseval', 'offenseval', 'ami_ibereval', 'ami_evalita', 'founta', 'waseem']:
+    test_data_path = os.path.join(base_path, 'data/multilingual_binary/{0}/{1}/'.format(LANGUAGE, test_dataset))
+    test_path = os.path.join(test_data_path, 'test.csv')
+    test_x, test_y, test_ids, test_sentences = load_data(test_path)
+
+    predicts = model.predict(test_x, verbose=False)
+    pred = predicts[0]
+    pred[pred>=.5]=1
+    pred[pred<.5]=0
+    report = classification_report(test_y, pred, output_dict=True)
+    df = pd.DataFrame(report)
+
+    with open("results.csv", "a") as fo:
+        writer = csv.writer(fo)
+        writer.writerow((LANGUAGE, TRAIN, test_dataset, SEED,
+                        df['0']['precision'],
+                        df['0']['recall'],
+                        df['0']['f1-score'],
+                        df['1']['precision'],
+                        df['1']['recall'],
+                        df['1']['f1-score'],
+                        df['macro avg']['precision'],
+                        df['macro avg']['recall'],
+                        df['macro avg']['f1-score']))
+
+    prediction_filename = "{0}_{1}_{2}_{3}.csv".format(LANGUAGE, TRAIN, test_dataset, SEED)
+    with open(os.path.join(prediction_path, prediction_filename), "w") as fo:
+        for i, test_id in enumerate(test_ids):
+            fo.write("{0},{1}\n".format(test_id, pred[i][0]))
