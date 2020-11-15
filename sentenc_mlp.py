@@ -23,13 +23,14 @@ import keras
 import tensorflow as tf
 
 N_TOPICS = 10
-ALPHA = 0.1
-dataset = "hateval"
+dataset = sys.argv[1]
+ALPHA = eval(sys.argv[2])
+
 language = 'en'
 BATCH_SIZE = 64
 EPOCHS = 100
-LR = 1e-5
-SEED = 1
+LR = 1e-4
+SEED = eval(sys.argv[3])
 
 data_path = 'data/multilingual_binary/{0}/{1}'.format(language, dataset)
 train_path = os.path.join(data_path, 'train.csv')
@@ -110,7 +111,7 @@ try:
 except:
     print ("file not found")
 
-es = EarlyStopping(monitor='val_label_loss', mode='min', verbose=1, patience=3)
+es = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=3)
 #mc = ModelCheckpoint('best_model.h5', monitor='val_label_auc', mode='max', verbose=1, save_best_only=True)
 mc = ModelCheckpoint("best_model.h5", monitor='val_loss', mode='min', verbose=1, save_best_only=True)
 
